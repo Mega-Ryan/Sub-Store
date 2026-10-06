@@ -1,5 +1,5 @@
 import { fail, AppError } from './errors.js';
-import { expectedVersion } from './validation.js';
+import { expectedVersion, settings as validateSettings } from './validation.js';
 const selects = "SELECT e.*, CASE WHEN e.kind='col' THEN (SELECT json_group_array(name) FROM (SELECT s.name FROM collection_members m JOIN entities s ON s.id=m.subscription_id WHERE m.collection_id=e.id ORDER BY m.position)) ELSE NULL END AS members FROM entities e";
 export function decode(row) {
   if (!row) return null;
@@ -75,6 +75,7 @@ export async function getSettings(db) {
   return {...JSON.parse(row.data),_version:row.version};
 }
 export async function patchSettings(db,data) {
+  data=validateSettings(data);
   const version = expectedVersion(data._version,'_version'); const head = await state(db);
   const current = await getSettings(db); const merged = {...current,...data}; delete merged._version;
   await mutate(db,[db.prepare("UPDATE settings SET data=?,version=version+1 WHERE key='settings'").bind(JSON.stringify(merged))],{

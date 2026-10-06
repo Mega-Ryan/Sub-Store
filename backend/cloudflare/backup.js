@@ -1,6 +1,6 @@
 import { Base64 } from 'js-base64';
 import { fail } from './errors.js';
-import { byteLength,entity,object,supported } from './validation.js';
+import { byteLength,entity,object,supported,settings } from './validation.js';
 import { expiration,normalizePayload } from './shares.js';
 import * as repo from './repositories.js';
 export async function exportBackup(db) {
@@ -38,8 +38,7 @@ export function validateBackup(content) {
   object(data); object(data.settings,'settings');
   if(byteLength(JSON.stringify(data))>4*1024*1024)fail('SIZE_LIMIT','备份最多 4 MiB',413);
   for(const key of ['artifacts','modules','archives','rules'])if(values(data,key).length)fail('UNSUPPORTED_FEATURE','备份包含首版不支持的数据：'+key,422,key);
-  supported(data.settings,'settings');
-  const result={settings:data.settings,entities:[],tokens:values(data,'tokens')};
+  const result={settings:settings(data.settings),entities:[],tokens:values(data,'tokens')};
   const names=new Map();const ids=new Map();
   for(const [key,kind]of [['subs','sub'],['collections','col'],['files','file']]){
     for(const input of values(data,key)){

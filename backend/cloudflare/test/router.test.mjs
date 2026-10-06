@@ -182,3 +182,32 @@ test('download noCache query bypasses previously persisted source cache', async 
         assert.equal(fetches, 2);
     }, { outboundService: async () => { fetches++; return new Response(ss); } });
 });
+
+test('saved request defaults apply to remote downloads and invalid settings preserve data', async () => {
+    const seen=[];
+    await withRouter(async r=>{
+        const current=ok(await r.admin('/api/settings'));
+        const saved=ok(await r.admin('/api/settings',{method:'PATCH',body:{_version:current._version,defaultUserAgent:'Saved-Source-UA',defaultFlowUserAgent:'Saved-Flow-UA',defaultTimeout:'1000'}}));
+        assert.equal(saved.defaultTimeout,1000);
+        ok(await r.admin('/api/subs',{method:'POST',body:{name:'remote-defaults',source:'remote',url:'https://upstream.example/nodes',process:[]}}),201);
+        const downloaded=await r.admin('/download/remote-defaults?target=JSON');assert.equal(downloaded.status,200,downloaded.text);
+        ok(await r.admin('/api/sub/flow/remote-defaults'));
+        assert.deepEqual(seen,['Saved-Source-UA','Saved-Flow-UA']);
+        failed(await r.admin('/api/settings',{method:'PATCH',body:{_version:saved._version,defaultTimeout:999}}),400,'INVALID_PAYLOAD');
+        failed(await r.admin('/api/settings',{method:'PATCH',body:{_version:saved._version,defaultUserAgent:'bad\r\nheader'}}),400,'INVALID_PAYLOAD');
+        assert.deepEqual(ok(await r.admin('/api/settings')),saved);
+        const backup=(await r.admin('/api/storage')).body;
+        failed(await r.admin('/api/storage',{method:'POST',body:{content:{...backup,settings:{...backup.settings,defaultTimeout:999}}}}),400,'INVALID_PAYLOAD');
+        assert.deepEqual((await r.admin('/api/storage')).body,backup);
+    },{outboundService:async req=>{seen.push(req.headers.get('user-agent'));return new Response(ss,{headers:{'subscription-userinfo':'upload=1; download=2; total=100'}});}});
+});
+
+test('saved timeout aborts slow upstream requests',async()=>{
+    await withRouter(async r=>{
+        const current=ok(await r.admin('/api/settings'));
+        ok(await r.admin('/api/settings',{method:'PATCH',body:{_version:current._version,defaultTimeout:1000}}));
+        ok(await r.admin('/api/files',{method:'POST',body:{name:'slow',source:'remote',url:'https://upstream.example/slow'}}),201);
+        failed(await r.admin('/download/file/slow?noCache=true'),502,'UPSTREAM_TIMEOUT');
+    },{outboundService:async()=>{await new Promise(resolve=>setTimeout(resolve,1400));return new Response('slow text');}});
+});
+

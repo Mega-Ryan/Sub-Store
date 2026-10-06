@@ -100,8 +100,8 @@ export async function handle(request,env,ctx){
       if(sub.noFlow||bool(url.searchParams.get('noFlow')))fail('NO_FLOW_INFO','已关闭流量信息',404);
       let flow=sub.subUserinfo;
       const context=new DownloadContext(env,ctx);
-      if(typeof flow==='string'&&/^https?:/.test(flow))flow=(await context.download(flow,{ua:sub.ua})).flow;
-      if(!flow&&sub.url)flow=(await context.download((url.searchParams.get('url')||sub.url).split(/\r?\n/)[0],{ua:sub.ua})).flow;
+      if(typeof flow==='string'&&/^https?:/.test(flow))flow=(await context.download(flow,{flow:true})).flow;
+      if(!flow&&sub.url)flow=(await context.download((url.searchParams.get('url')||sub.url).split(/\r?\n/)[0],{flow:true})).flow;
       return json(flowInfo(flow));
     }
     const listMatch=path.match(/^\/api\/(subs|collections|files|wholeFiles)$/);

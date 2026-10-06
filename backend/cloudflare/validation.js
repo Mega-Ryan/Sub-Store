@@ -97,6 +97,18 @@ export function expectedVersion(value, field = 'version') {
   if (!Number.isSafeInteger(value) || value < 1) fail('VERSION_CONFLICT','请重新读取最新数据后再保存',409,field);
   return value;
 }
+export function settings(input) {
+  object(input,'settings');supported(input,'settings');const data=structuredClone(input);
+  for(const key of ['defaultUserAgent','defaultFlowUserAgent']){
+    if(data[key]!==undefined&&(typeof data[key]!=='string'||data[key].length>2048||/[\r\n]/.test(data[key])))fail('INVALID_PAYLOAD','User-Agent 必须是有效文本',400,key);
+  }
+  if(data.defaultTimeout!==undefined){
+    const timeout=Number(data.defaultTimeout);
+    if(!Number.isSafeInteger(timeout)||timeout<1000||timeout>30000)fail('INVALID_PAYLOAD','请求超时须为 1000–30000 毫秒',400,'defaultTimeout');
+    data.defaultTimeout=timeout;
+  }
+  return data;
+}
 export async function readJSON(request, limit = 4 * 1024 * 1024) {
   if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) fail('INVALID_CONTENT_TYPE','请使用 application/json',415);
   const text = await readText(request.body, limit);

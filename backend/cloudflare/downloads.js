@@ -5,7 +5,7 @@ import * as repo from './repositories.js';
 import { convert, validateTarget } from './conversion/index.js';
 
 export class DownloadContext {
-  constructor(env,ctx,options={}) { this.env=env; this.ctx=ctx; this.noCache=options.noCache===true; this.active=0; this.waiters=[]; this.requests=0; this.bytes=0; this.sourceCount=0; this.epoch=null; this.cleaned=false; }
+  constructor(env,ctx,options={}) { this.env=env; this.ctx=ctx; this.noCache=options.noCache===true; this.active=0; this.waiters=[]; this.requests=0; this.bytes=0; this.sourceCount=0; this.epoch=null; this.cleaned=false; this.settingsPromise=null; }
   async slot(task) {
     if (this.active>=3) await new Promise(resolve => this.waiters.push(resolve));
     else this.active++;
@@ -22,7 +22,8 @@ export class DownloadContext {
       if (typeof value !== 'string' || value.length>2048) fail('INVALID_PAYLOAD','请求头无效');
       headers.set(key,value);
     }
-    headers.set('User-Agent',options.ua || args.ua || args.userAgent || 'Sub-Store-Cloudflare/1.0');
+    const defaults=await (this.settingsPromise??=repo.getSettings(this.env.DB));
+    headers.set('User-Agent',options.ua || args.ua || args.userAgent || (options.flow?defaults.defaultFlowUserAgent:defaults.defaultUserAgent) || 'Sub-Store-Cloudflare/1.0');
     this.epoch ??= (await repo.state(this.env.DB)).cache_epoch;
     const key=await hash(JSON.stringify([this.epoch,parsed.url,Array.from(headers)]));
     const noCache=this.noCache || options.noCache===true || args.noCache===true || args.noCache==='true';
@@ -31,7 +32,7 @@ export class DownloadContext {
       if(cached) { this.addBytes(cached.body); return {content:cached.body,flow:cached.flow}; }
     }
     const result=await this.slot(async()=>{
-      let url=parsed.url; const controller=new AbortController(); const timer=setTimeout(()=>controller.abort(),15000);
+      let url=parsed.url; const controller=new AbortController(); const timeout=Math.max(1000,Math.min(30000,Number(defaults.defaultTimeout)||15000)); const timer=setTimeout(()=>controller.abort(),timeout);
       try {
         for(let redirects=0;redirects<=3;redirects++) {
           if(++this.requests>24) fail('SIZE_LIMIT','上游请求次数超出限制',413);
