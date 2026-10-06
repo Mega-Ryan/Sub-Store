@@ -1,0 +1,35 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "sub-store-api",
+  "main": "./dist/worker.js",
+  "compatibility_date": "2026-10-06",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": false,
+  "preview_urls": false,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "sub-store-db",
+      "database_id": "8fcd8da3-15d8-4652-830e-69588a728698",
+      "migrations_dir": "./migrations"
+    }
+  ],
+  "vars": {
+    "ENVIRONMENT": "production",
+    "PUBLIC_ORIGIN": "https://sub-store-ui-5f8.pages.dev",
+    "SESSION_TTL_SECONDS": "21600",
+    "RESOURCE_CACHE_TTL_SECONDS": "300",
+    "BUILD_REVISION": "development"
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": false
+    },
+    "redact_query_string": true
+  }
+}
