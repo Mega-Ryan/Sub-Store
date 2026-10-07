@@ -19,7 +19,7 @@ export async function exportBackup(db) {
     if(row.kind==='col')data.subscriptions=members.get(row.id)??[];
     output[row.kind==='sub'?'subs':row.kind==='col'?'collections':'files'].push(data);
   }
-  for(const row of results[3].results)output.tokens.push({...JSON.parse(row.data),name:row.name,token:row.token,type:row.type,createdAt:row.created_at,...(row.max_count!==null?{count:row.max_count,usedCount:row.used_count}:{}),...(row.exp!==null?{exp:row.exp}:{})});
+  for(const row of results[3].results)output.tokens.push({...JSON.parse(row.data),name:row.name,token:row.token,type:row.type,createdAt:row.created_at,usedCount:row.used_count,...(row.max_count!==null?{count:row.max_count}:{}),...(row.exp!==null?{exp:row.exp}:{})});
   return output;
 }
 function values(data,key) {
@@ -58,6 +58,11 @@ export function validateBackup(content) {
     const payload=normalizePayload(input);
     // Restoring a saved expiry must never restart a duration, including legacy backups.
     const options=expiration({...token,mode:token.exp&&(!token.mode||token.mode==='duration')?'datetime':token.mode});
+    if(options.mode!=='count') {
+      const history=usedCount===undefined?0:usedCount;
+      if(!Number.isSafeInteger(history)||history<0||history>100000000)fail('INVALID_BACKUP_DATA','分享已用次数无效');
+      options.usedCount=history;
+    }
     if(createdAt!==undefined&&(!Number.isSafeInteger(createdAt)||createdAt<0))fail('INVALID_BACKUP_DATA','分享创建时间无效');
     return {...payload,...options,token:rawToken,...(createdAt!==undefined?{createdAt}:{}),targetId:ids.get(token.type+':'+token.name)};
   });

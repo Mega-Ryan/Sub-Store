@@ -127,6 +127,67 @@ test('share mode changes retain counted usage and reject lower limits atomically
     });
 });
 
+test('backup retains historical share usage across time modes and rejects invalid usage before writing', async () => {
+    await withRouter(async (r) => {
+        ok(await r.admin('/api/subs', { method: 'POST', body: subscription('backup-history') }), 201);
+        const payload = { type: 'sub', name: 'backup-history', target: 'ClashMeta' };
+        const { token } = ok(await r.admin('/api/token', {
+            method: 'POST', body: { payload, options: { mode: 'count', count: 3 } },
+        }));
+        const sharePath = '/share/sub/backup-history?token=' + token + '&target=ClashMeta';
+        const editPath = '/api/token/' + token + '?type=sub&name=backup-history';
+        const savedToken = () => r.db.prepare('SELECT * FROM share_tokens WHERE token=?').bind(token).first();
+        ok(await request(r, sharePath));
+        ok(await request(r, sharePath));
+        ok(await r.admin(editPath, {
+            method: 'PATCH', body: { payload, options: { mode: 'duration', expiresIn: '1h' } },
+        }));
+        const durationToken = await savedToken();
+        const exported = (await r.admin('/api/storage')).body;
+        assert.equal(exported.tokens[0].usedCount, 2);
+        assert.equal(exported.tokens[0].exp, durationToken.exp);
+        assert.equal(exported.tokens[0].token, token);
+        ok(await r.admin('/api/storage', { method: 'POST', body: { content: exported } }));
+        const restoredTime = await savedToken();
+        assert.equal(restoredTime.used_count, 2);
+        assert.equal(restoredTime.exp, durationToken.exp);
+        assert.equal(restoredTime.token, token);
+        assert.equal(restoredTime.max_count, null);
+        const snapshot = async () => (await r.db.batch([
+            r.db.prepare('SELECT * FROM entities ORDER BY id'),
+            r.db.prepare('SELECT * FROM settings ORDER BY key'),
+            r.db.prepare('SELECT * FROM share_tokens ORDER BY token'),
+            r.db.prepare('SELECT * FROM app_state ORDER BY id'),
+        ])).map(({ results }) => results);
+        const beforeInvalid = await snapshot();
+        for (const usedCount of [-1, 0.5, 100000001, null, '2']) {
+            const invalid = structuredClone(exported);
+            invalid.tokens[0].usedCount = usedCount;
+            failed(await r.admin('/api/storage', { method: 'POST', body: { content: invalid } }),
+                400, 'INVALID_BACKUP_DATA');
+            assert.deepEqual(await snapshot(), beforeInvalid);
+        }
+        failed(await r.admin(editPath, {
+            method: 'PATCH', body: { payload, options: { mode: 'count', count: 1 } },
+        }), 409, 'VERSION_CONFLICT');
+        assert.deepEqual(await savedToken(), restoredTime);
+        assert.deepEqual(await snapshot(), beforeInvalid);
+        ok(await r.admin(editPath, {
+            method: 'PATCH', body: { payload, options: { mode: 'count', count: 3 } },
+        }));
+        assert.equal((await savedToken()).used_count, 2);
+        ok(await request(r, sharePath));
+        failed(await request(r, sharePath), 403, 'INVALID_TOKEN');
+        assert.equal((await savedToken()).used_count, 3);
+        const legacy = structuredClone(exported);
+        delete legacy.tokens[0].usedCount;
+        ok(await r.admin('/api/storage', { method: 'POST', body: { content: legacy } }));
+        assert.equal((await savedToken()).used_count, 0);
+        assert.equal((await savedToken()).exp, durationToken.exp);
+        assert.equal((await savedToken()).token, token);
+    });
+});
+
 test('backup token targets and resource overrides reject before replacing existing data', async () => {
     await withRouter(async (r) => {
         ok(await r.admin('/api/subs', { method: 'POST', body: subscription('existing') }), 201);
