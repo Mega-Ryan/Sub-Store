@@ -1,0 +1,74 @@
+name: Deploy Cloudflare Worker
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Deployment environment
+        type: choice
+        options: [staging, production]
+        default: staging
+        required: true
+      backend_sha:
+        description: Exact backend commit SHA on cloudflare-basic
+        type: string
+        required: true
+      frontend_sha:
+        description: Paired frontend commit SHA (recorded for the subsequent Pages deployment)
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: cloudflare-worker-${{ inputs.environment }}
+  cancel-in-progress: false
+defaults:
+  run:
+    working-directory: backend/cloudflare
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Require immutable paired revisions
+        working-directory: .
+        env:
+          BACK_SHA: ${{ inputs.backend_sha }}
+          FRONT_SHA: ${{ inputs.frontend_sha }}
+        run: |
+          [[ "$BACK_SHA" =~ ^[a-fA-F0-9]{40}$ ]]
+          [[ "$FRONT_SHA" =~ ^[a-fA-F0-9]{40}$ ]]
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.backend_sha }}
+          fetch-depth: 0
+      - name: Check approved branch ancestry
+        working-directory: .
+        run: git merge-base --is-ancestor HEAD origin/cloudflare-basic
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+          package_json_file: backend/cloudflare/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.15.0
+          cache: pnpm
+          cache-dependency-path: backend/cloudflare/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run types
+      - run: pnpm run typecheck
+      - run: pnpm test
+      - run: pnpm run test:conversion
+      - run: pnpm run build
+      - name: Apply migration and deploy private Worker
+        env:
+          DEPLOY_ENV: ${{ inputs.environment }}
+          BACK_SHA: ${{ inputs.backend_sha }}
+          FRONT_SHA: ${{ inputs.frontend_sha }}
+        run: |
+          CONFIG="wrangler.$DEPLOY_ENV.jsonc"
+          pnpm exec wrangler d1 migrations apply DB --remote --config "$CONFIG"
+          pnpm exec wrangler deploy --config "$CONFIG" --var "BUILD_REVISION:$BACK_SHA"
+          printf 'Backend: %s\nFrontend: %s\nEnvironment: %s\n' "$BACK_SHA" "$FRONT_SHA" "$DEPLOY_ENV" >> "$GITHUB_STEP_SUMMARY"

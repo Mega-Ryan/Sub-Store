@@ -1,0 +1,36 @@
+name: Cloudflare checks
+on:
+  push:
+    branches: [cloudflare-basic]
+  pull_request:
+    branches: [master, cloudflare-basic]
+permissions:
+  contents: read
+defaults:
+  run:
+    working-directory: backend/cloudflare
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+          package_json_file: backend/cloudflare/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.15.0
+          cache: pnpm
+          cache-dependency-path: backend/cloudflare/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run types
+      - run: pnpm run typecheck
+      - run: pnpm test
+      - run: pnpm run test:conversion
+      - run: pnpm run build
+      - run: pnpm exec wrangler deploy --dry-run --config wrangler.staging.jsonc
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloudflare-worker
+          path: backend/cloudflare/dist
