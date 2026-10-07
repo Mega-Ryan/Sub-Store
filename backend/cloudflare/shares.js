@@ -79,9 +79,9 @@ export async function updateToken(db,token,type,name,payload,options) {
   const expires=expiration(options);
   const rows=await db.prepare('SELECT * FROM share_tokens WHERE token=? AND target_id=? AND type=?').bind(token,currentTarget.id,type).first();
   if(!rows)fail('RESOURCE_NOT_FOUND','分享不存在',404);
-  await repo.mutate(db,[db.prepare('UPDATE share_tokens SET target_id=?,type=?,data=?,exp=?,max_count=?,used_count=CASE WHEN max_count IS NULL THEN 0 ELSE used_count END WHERE token=?').bind(
+  await repo.mutate(db,[db.prepare('UPDATE share_tokens SET target_id=?,type=?,data=?,exp=?,max_count=? WHERE token=?').bind(
     target.id,payload.type,JSON.stringify({...payload,...expires}),expires.exp??null,expires.count??null,token,
-  )],{revision:head.revision,check:'(SELECT COUNT(*) FROM share_tokens WHERE token=? AND target_id=? AND type=? AND used_count=? AND (max_count IS NULL OR ? IS NULL OR used_count<=?))',args:[token,currentTarget.id,type,rows.used_count,expires.count??null,expires.count??null]});
+  )],{revision:head.revision,check:'(SELECT COUNT(*) FROM share_tokens WHERE token=? AND target_id=? AND type=? AND used_count=? AND (? IS NULL OR used_count<=?))',args:[token,currentTarget.id,type,rows.used_count,expires.count??null,expires.count??null]});
   return {token};
 }
 export async function consume(db,token,kind,itemName,target='ClashMeta') {

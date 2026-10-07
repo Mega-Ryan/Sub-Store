@@ -84,6 +84,49 @@ test('wrong share format cannot consume a counted token and concurrent usage can
     });
 });
 
+test('share mode changes retain counted usage and reject lower limits atomically', async () => {
+    await withRouter(async (r) => {
+        ok(await r.admin('/api/subs', { method: 'POST', body: subscription('mode-switch') }), 201);
+        const payload = { type: 'sub', name: 'mode-switch', target: 'ClashMeta' };
+        const { token } = ok(await r.admin('/api/token', {
+            method: 'POST', body: { payload, options: { mode: 'count', count: 3 } },
+        }));
+        const sharePath = '/share/sub/mode-switch?token=' + token + '&target=ClashMeta';
+        const editPath = '/api/token/' + token + '?type=sub&name=mode-switch';
+        const savedToken = () => r.db.prepare('SELECT * FROM share_tokens WHERE token=?').bind(token).first();
+        ok(await request(r, sharePath));
+        ok(await request(r, sharePath));
+        assert.equal((await savedToken()).used_count, 2);
+        assert.deepEqual(ok(await r.admin(editPath, {
+            method: 'PATCH', body: { payload, options: { mode: 'duration', expiresIn: '1h' } },
+        })), { token });
+        ok(await request(r, sharePath));
+        const durationToken = await savedToken();
+        assert.equal(durationToken.max_count, null);
+        assert.equal(durationToken.used_count, 2);
+        assert.equal(JSON.parse(durationToken.data).mode, 'duration');
+        const revision = await r.db.prepare('SELECT revision FROM app_state WHERE id=1').first();
+        failed(await r.admin(editPath, {
+            method: 'PATCH',
+            body: { payload: { ...payload, displayName: 'Rejected replacement' }, options: { mode: 'count', count: 1 } },
+        }), 409, 'VERSION_CONFLICT');
+        assert.deepEqual(await savedToken(), durationToken);
+        assert.deepEqual(await r.db.prepare('SELECT revision FROM app_state WHERE id=1').first(), revision);
+        assert.deepEqual(ok(await r.admin(editPath, {
+            method: 'PATCH', body: { payload, options: { mode: 'count', count: 3 } },
+        })), { token });
+        const restored = await savedToken();
+        assert.equal(restored.token, token);
+        assert.equal(restored.max_count, 3);
+        assert.equal(restored.used_count, 2);
+        assert.equal(restored.exp, null);
+        assert.equal(JSON.parse(restored.data).mode, 'count');
+        ok(await request(r, sharePath));
+        failed(await request(r, sharePath), 403, 'INVALID_TOKEN');
+        assert.equal((await savedToken()).used_count, 3);
+    });
+});
+
 test('backup token targets and resource overrides reject before replacing existing data', async () => {
     await withRouter(async (r) => {
         ok(await r.admin('/api/subs', { method: 'POST', body: subscription('existing') }), 201);
