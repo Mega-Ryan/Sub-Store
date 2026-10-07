@@ -47,7 +47,7 @@ pnpm exec wrangler dev --local --config wrangler.staging.jsonc --port 8787
 
 ## 发布与回滚
 
-测试 D1：`sub-store-db-staging`；正式 D1：`sub-store-db`。两套 Wrangler 配置已记录实际数据库 ID 与 Pages Origin。Worker 禁止 `workers.dev` 和 preview URL，无公开路由。
+测试 D1：`sub-store-db-staging`；正式 D1：`sub-store-db`。两套 Wrangler 配置已记录实际数据库 ID 与 Pages Origin。两环境均启用 `global_fetch_strictly_public`，使远程订阅来源按公网路由经过 Worker／Pages 入口，避免同 zone 的源请求绕过 Worker 路由而访问不存在的 origin 并返回 522。[Cloudflare 官方说明](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#global-fetch-strictly-public)。Worker 禁止 `workers.dev` 和 preview URL，无公开路由。
 
 每次先发布后端，再发布前端。手动 Actions 输入两边完整提交 SHA，后端写入 `BUILD_REVISION`；前端发布检查 `/backend/health` 与输入的后端 SHA 一致。两个仓库 CI 自动构建/测试，部署由 `workflow_dispatch` 明确选择环境，外部 PR 不触发部署。
 
