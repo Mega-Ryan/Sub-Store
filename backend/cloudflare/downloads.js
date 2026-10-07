@@ -3,6 +3,7 @@ import { hash } from './auth.js';
 import { byteLength, readText, sourceURL, entity } from './validation.js';
 import * as repo from './repositories.js';
 import { convert, validateTarget } from './conversion/index.js';
+const CROSS_ORIGIN_SAFE_HEADERS = new Set(['user-agent','accept','accept-language']);
 
 export class DownloadContext {
   constructor(env,ctx,options={}) { this.env=env; this.ctx=ctx; this.noCache=options.noCache===true; this.active=0; this.waiters=[]; this.requests=0; this.bytes=0; this.sourceCount=0; this.epoch=null; this.cleaned=false; this.settingsPromise=null; }
@@ -42,7 +43,12 @@ export class DownloadContext {
             if(redirects===3) fail('UPSTREAM_REDIRECT_LIMIT','上游重定向次数过多',502);
             const location=response.headers.get('location'); if(!location) fail('UPSTREAM_INVALID_RESPONSE','上游重定向缺少地址',502);
             const next=sourceURL(new URL(location,url).toString()).url;
-            if(new URL(next).origin!==new URL(url).origin) { headers.delete('Authorization'); }
+            if(new URL(next).origin!==new URL(url).origin) {
+              // Custom subscription credentials must stay scoped to the original origin.
+              for(const key of Array.from(headers.keys())) {
+                if(!CROSS_ORIGIN_SAFE_HEADERS.has(key.toLowerCase())) headers.delete(key);
+              }
+            }
             url=next; continue;
           }
           if(!response.ok) { await response.body?.cancel(); fail('UPSTREAM_HTTP_ERROR','上游返回 HTTP ' + response.status,502); }

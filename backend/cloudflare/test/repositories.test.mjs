@@ -200,6 +200,58 @@ test('remote downloads cache responses, preserve flow metadata and honor refresh
     });
 });
 
+test('upstream redirects preserve custom credentials within an origin and strip them across origins', async () => {
+    const seen = [];
+    const credentialHeaders = ['authorization', 'x-api-key', 'x-subscription-token', 'x-provider-context'];
+    const safeHeaders = {
+        'user-agent': 'Sub-Store-Redirect-Test/1.0',
+        accept: 'text/plain',
+        'accept-language': 'en',
+    };
+    await withRuntime(async (r) => {
+        assert.equal(success(await r.call('download', {
+            url: 'https://first.example/start',
+            options: {
+                ua: safeHeaders['user-agent'],
+                headers: {
+                    Authorization: 'test-only-auth',
+                    'X-API-Key': 'test-only-key',
+                    'X-Subscription-Token': 'test-only-token',
+                    'X-Provider-Context': 'test-only-private-context',
+                    Accept: safeHeaders.accept,
+                    'Accept-Language': safeHeaders['accept-language'],
+                },
+            },
+        })).content, ss);
+        assert.deepEqual(seen.map(({ url }) => url), [
+            'https://first.example/start',
+            'https://first.example/same-origin',
+            'https://second.example/moved',
+            'https://second.example/final',
+        ]);
+        for (const request of seen.slice(0, 2)) {
+            assert.deepEqual(request.credentials, ['test-only-auth', 'test-only-key', 'test-only-token', 'test-only-private-context']);
+        }
+        for (const request of seen.slice(2)) {
+            assert.deepEqual(request.credentials, [null, null, null, null]);
+        }
+        for (const request of seen) assert.deepEqual(request.safe, safeHeaders);
+    }, {
+        outboundService: async (request) => {
+            seen.push({
+                url: request.url,
+                credentials: credentialHeaders.map((name) => request.headers.get(name)),
+                safe: Object.fromEntries(Object.keys(safeHeaders).map((name) => [name, request.headers.get(name)])),
+            });
+            const url = new URL(request.url);
+            const location = url.pathname === '/start' ? '/same-origin'
+                : url.pathname === '/same-origin' ? 'https://second.example/moved'
+                : url.pathname === '/moved' ? '/final' : null;
+            return location ? new Response(null, { status: 302, headers: { location } }) : new Response(ss);
+        },
+    });
+});
+
 test('cross-origin upstream redirects strip authorization and reject private destinations', async () => {
     const seen = [];
     await withRuntime(async (r) => {

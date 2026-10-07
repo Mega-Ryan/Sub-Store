@@ -21,6 +21,8 @@
 
 编辑对象与设置需要最新 `version`/`_version`，冲突返回 409。合集通过稳定 ID 引用订阅，重命名不会断开关系；删除订阅会解除合集引用，删除资源会撤销相关分享。日志仅保存错误代码，最多 1000 条；缓存最多 200 条，默认 5 分钟，刷新增加缓存代次避免旧请求覆盖新缓存。
 
+远程来源的自定义请求头仅在同 origin 重定向中保留。跨 origin 重定向只保留 `User-Agent`、`Accept`、`Accept-Language`，会移除 `Authorization`、`X-API-Key` 等自定义鉴权头，避免把来源凭据转发给第三方。需要鉴权的来源宜直接配置最终 URL 与对应请求头。
+
 ## 构建与本地开发
 
 Cloudflare 使用独立的 `backend/cloudflare/package.json` 和锁文件，避免安装 Node 后端的服务器专用依赖。原 Node 发布入口保持独立。基线 Node 24.15.0、pnpm 11.0.9、Wrangler 4.147.0。
